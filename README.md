@@ -1,9 +1,9 @@
-# pa-notify
+# xbacklight-notify
 
 <!-- <a href="https://aur.archlinux.org/packages/pa-notify/"><img src="https://raw.githubusercontent.com/themix-project/oomox/master/packaging/download_aur.png" height="54"></a> -->
 
 ### Description
-XBacklight notification
+XBacklight notification daemon
 
 ### Usage
 
