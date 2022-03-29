@@ -117,9 +117,7 @@ main(int argc, char* argv[])
     g_info("Notify has been initialized");
 
     g_return_val_if_fail(backlight_new(&backlight), 1);
-    g_info("X11 randr has been initialized. Version: %d.%d",
-           backlight.version.major,
-           backlight.version.minor);
+    g_info("X11 randr has been initialized");
 
     backlight_clear(&backlight);
     notify_uninit();
