@@ -119,6 +119,8 @@ main(int argc, char* argv[])
     g_return_val_if_fail(backlight_new(&backlight), 1);
     g_info("X11 randr has been initialized");
 
+    backlight_loop_run(&backlight);
+
     backlight_clear(&backlight);
     notify_uninit();
     context_free(&context);
