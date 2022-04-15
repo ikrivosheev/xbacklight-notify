@@ -4,8 +4,11 @@ gboolean
 backlight_new(backlight_t* backlight)
 {
     xcb_generic_error_t* error;
+    xcb_atom_t atom_new = XCB_ATOM_NONE;
+    xcb_atom_t atom_old = XCB_ATOM_NONE;
 
     backlight->connection = xcb_connect(NULL, NULL);
+    backlight->atom = XCB_ATOM_NONE;
 
     if (_randr_extension(backlight->connection, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
@@ -19,13 +22,13 @@ backlight_new(backlight_t* backlight)
         return FALSE;
     }
 
-    if (_randr_atom(backlight->connection, "Backlight", &backlight->atom_new, &error) == FALSE) {
+    if (_randr_atom(backlight->connection, "Backlight", &atom_new, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
         g_error("New Atom returned error: %s", generic_error_str(ec));
         return FALSE;
     }
 
-    if (_randr_atom(backlight->connection, "BACKLIGHT", &backlight->atom_old, &error) == FALSE) {
+    if (_randr_atom(backlight->connection, "BACKLIGHT", &atom_old, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
         g_error("Old Atom returned error: %s", generic_error_str(ec));
         return FALSE;
@@ -44,7 +47,7 @@ backlight_new(backlight_t* backlight)
         return FALSE;
     }
 
-    if (_randr_range(backlight, &error) == FALSE) {
+    if (_randr_range(backlight, atom_new, atom_old, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
         g_error("RANDR range error: %s", generic_error_str(ec));
         return FALSE;
@@ -99,31 +102,23 @@ backlight_clear(backlight_t* backlight)
     xcb_disconnect(backlight->connection);
 }
 
-gboolean
-backlight_value(backlight_t* backlight, long* value, xcb_generic_error_t** error)
+static gboolean
+_randr_value(backlight_t* backlight, long* value, xcb_generic_error_t** error)
 {
     xcb_connection_t* connection = backlight->connection;
-    xcb_atom_t atom_new = backlight->atom_new;
-    xcb_atom_t atom_old = backlight->atom_old;
     xcb_randr_output_t output = backlight->output;
+    xcb_atom_t atom = backlight->atom;
     gboolean result = TRUE;
     xcb_randr_get_output_property_reply_t* prop_reply = NULL;
     xcb_randr_get_output_property_cookie_t prop_cookie;
 
-    if (atom_new != XCB_ATOM_NONE) {
+    if (atom != XCB_ATOM_NONE) {
         prop_cookie =
-          xcb_randr_get_output_property(connection, output, atom_new, XCB_ATOM_NONE, 0, 4, 0, 0);
+          xcb_randr_get_output_property(connection, output, atom, XCB_ATOM_NONE, 0, 4, 0, 0);
         prop_reply = xcb_randr_get_output_property_reply(connection, prop_cookie, error);
-        if (error != NULL || prop_reply == NULL) {
+        if (*error != NULL || prop_reply == NULL) {
             free(prop_reply);
-            if (atom_old != XCB_ATOM_NONE) {
-                prop_cookie = xcb_randr_get_output_property(
-                  connection, output, atom_old, XCB_ATOM_NONE, 0, 4, 0, 0);
-                prop_reply = xcb_randr_get_output_property_reply(connection, prop_cookie, error);
-                if (error != NULL || prop_reply == NULL) {
-                    result = FALSE;
-                }
-            }
+            return FALSE;
         }
     }
 
@@ -139,27 +134,30 @@ backlight_value(backlight_t* backlight, long* value, xcb_generic_error_t** error
 }
 
 void
-backlight_loop_run(backlight_t* backlight)
+backlight_loop_run(backlight_t* backlight, update_callback_t callback, void* userdata)
 {
     xcb_connection_t* connection = backlight->connection;
+    long value;
     xcb_generic_event_t* event;
+    xcb_generic_error_t* error;
     xcb_randr_notify_event_t* randr_event;
 
     while ((event = xcb_wait_for_event(connection))) {
         randr_event = (xcb_randr_notify_event_t*)event;
         if (randr_event->subCode != XCB_RANDR_NOTIFY_OUTPUT_PROPERTY) {
-            g_info("EVENT subCode");
             continue;
         } else if (randr_event->u.op.status != XCB_PROPERTY_NEW_VALUE) {
-            g_info("EVENT status");
             continue;
         } else if (randr_event->u.op.window != backlight->window) {
-            g_info("EVENT window");
             continue;
         } else if (randr_event->u.op.output != backlight->output) {
-            g_info("EVENT output");
             continue;
         } else {
+            if (_randr_value(backlight, &value, &error) == FALSE) {
+                g_error("Randr get atom value: %s", generic_error_str(error->error_code));
+                continue;
+            }
+            callback(backlight, value, userdata);
         }
     }
 }
@@ -235,11 +233,12 @@ _randr_atom(xcb_connection_t* connection,
 }
 
 static gboolean
-_randr_range(backlight_t* backlight, xcb_generic_error_t** error)
+_randr_range(backlight_t* backlight,
+             xcb_atom_t atom_new,
+             xcb_atom_t atom_old,
+             xcb_generic_error_t** error)
 {
     xcb_connection_t* connection = backlight->connection;
-    xcb_atom_t atom_new = backlight->atom_new;
-    xcb_atom_t atom_old = backlight->atom_old;
     xcb_randr_output_t output = backlight->output;
 
     gboolean result = TRUE;
@@ -256,8 +255,12 @@ _randr_range(backlight_t* backlight, xcb_generic_error_t** error)
                 prop_reply = xcb_randr_query_output_property_reply(connection, prop_cookie, error);
                 if (*error != NULL || prop_reply == NULL) {
                     result = FALSE;
+                } else {
+                    backlight->atom = atom_old;
                 }
             }
+        } else {
+            backlight->atom = atom_new;
         }
     }
 

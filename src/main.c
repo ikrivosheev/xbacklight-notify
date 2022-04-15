@@ -12,7 +12,7 @@
 typedef struct _Context
 {
     NotifyNotification* notification;
-    gint last_val;
+    gint backlight;
 } Context;
 
 static struct config
@@ -41,7 +41,7 @@ void
 context_init(Context* context)
 {
     context->notification = notify_notification_new(NULL, NULL, NULL);
-    context->last_val = -1;
+    context->backlight = -1;
 }
 
 void
@@ -67,6 +67,24 @@ notify_message(NotifyNotification* notification,
     }
 
     notify_notification_show(notification, NULL);
+}
+
+void
+backlight_callback(backlight_t* backlight, long value, void* userdata)
+{
+    float upper, lower, perc;
+    int nearest_5;
+
+    Context* context = (Context*)userdata;
+    if (context->backlight != value) {
+        upper = backlight->range.max - backlight->range.min;
+        lower = value - backlight->range.min;
+        perc = (lower / upper) * 100.0f;
+        nearest_5 = (int)(perc / 5.0 + 0.5) * 5.0;
+        notify_message(
+          context->notification, "Backlight", NULL, NOTIFY_URGENCY_LOW, config.timeout, nearest_5);
+        context->backlight = value;
+    }
 }
 
 static gboolean
@@ -119,7 +137,7 @@ main(int argc, char* argv[])
     g_return_val_if_fail(backlight_new(&backlight), 1);
     g_info("X11 randr has been initialized");
 
-    backlight_loop_run(&backlight);
+    backlight_loop_run(&backlight, backlight_callback, &context);
 
     backlight_clear(&backlight);
     notify_uninit();
