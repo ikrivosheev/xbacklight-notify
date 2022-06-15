@@ -48,15 +48,28 @@ void
 context_free(Context* context)
 {}
 
+static gchar*
+notify_icon(gint brightness)
+{
+    if (brightness >= 66) {
+        return "notification-display-brightness-hight";
+    } else if (brightness >= 33) {
+        return "notification-display-brightness-medium";
+    } else {
+        return "notification-display-brightness-low";
+    }
+}
+
 static void
 notify_message(NotifyNotification* notification,
                const gchar* summary,
                const gchar* body,
                NotifyUrgency urgency,
+               const gchar* icon,
                gint timeout,
                gint brightness)
 {
-    notify_notification_update(notification, summary, body, NULL);
+    notify_notification_update(notification, summary, body, icon);
     notify_notification_set_timeout(notification, timeout);
     notify_notification_set_urgency(notification, urgency);
     if (brightness >= 0) {
@@ -70,7 +83,7 @@ notify_message(NotifyNotification* notification,
 }
 
 void
-backlight_callback(backlight_t* backlight, long value, void* userdata)
+backlight_callback(backlight_t* backlight, gint value, void* userdata)
 {
     float upper, lower, perc;
     int nearest_5;
@@ -81,8 +94,13 @@ backlight_callback(backlight_t* backlight, long value, void* userdata)
         lower = value - backlight->range.min;
         perc = (lower / upper) * 100.0f;
         nearest_5 = (int)(perc / 5.0 + 0.5) * 5.0;
-        notify_message(
-          context->notification, "Backlight", NULL, NOTIFY_URGENCY_LOW, config.timeout, nearest_5);
+        notify_message(context->notification,
+                       "Backlight",
+                       NULL,
+                       NOTIFY_URGENCY_LOW,
+                       notify_icon(nearest_5),
+                       config.timeout,
+                       nearest_5);
         context->backlight = value;
     }
 }
