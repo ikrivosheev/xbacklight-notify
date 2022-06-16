@@ -52,7 +52,7 @@ static gchar*
 notify_icon(gint brightness)
 {
     if (brightness >= 66) {
-        return "notification-display-brightness-hight";
+        return "notification-display-brightness-high";
     } else if (brightness >= 33) {
         return "notification-display-brightness-medium";
     } else {
