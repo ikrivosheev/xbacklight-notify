@@ -12,44 +12,51 @@ backlight_new(backlight_t* backlight)
 
     if (_randr_extension(backlight->connection, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("RANDR Query Version returned error %s", generic_error_str(ec));
+        g_warning("RANDR Query Version returned error %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
     if (_randr_version(backlight->connection, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("RANDR Query Version returned error %s", generic_error_str(ec));
+        g_warning("RANDR Query Version returned error %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
     if (_randr_atom(backlight->connection, "Backlight", &atom_new, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("New Atom returned error: %s", generic_error_str(ec));
+        g_warning("New Atom returned error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
     if (_randr_atom(backlight->connection, "BACKLIGHT", &atom_old, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("Old Atom returned error: %s", generic_error_str(ec));
+        g_warning("Old Atom returned error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
     xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(backlight->connection)).data;
 
     if (screen == NULL) {
-        g_error("Cannot find screen");
+        g_warning("Cannot find screen");
+        backlight_clear(backlight);
         return FALSE;
     }
 
     if (_randr_outpout(backlight, screen->root, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("RANDR primary output error: %s", generic_error_str(ec));
+        g_warning("RANDR primary output error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
     if (_randr_range(backlight, atom_new, atom_old, &error) == FALSE) {
         int ec = error ? error->error_code : -1;
-        g_error("RANDR range error: %s", generic_error_str(ec));
+        g_warning("RANDR range error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
@@ -68,14 +75,16 @@ backlight_new(backlight_t* backlight)
                                                          0,
                                                          NULL);
     if (xcb_flush(backlight->connection) < 0) {
-        g_error("Error on flush");
+        g_warning("Error on flush");
+        backlight_clear(backlight);
         return FALSE;
     }
 
     error = xcb_request_check(backlight->connection, cookie);
     if (error != NULL) {
         int ec = error ? error->error_code : -1;
-        g_error("Cannot create Window with error: %s", generic_error_str(ec));
+        g_warning("Cannot create Window with error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
 
@@ -83,14 +92,16 @@ backlight_new(backlight_t* backlight)
       backlight->connection, backlight->window, XCB_RANDR_NOTIFY_MASK_OUTPUT_PROPERTY);
 
     if (xcb_flush(backlight->connection) < 0) {
-        g_error("Error on flush");
+        g_warning("Error on flush");
+        backlight_clear(backlight);
         return FALSE;
     }
 
     error = xcb_request_check(backlight->connection, cookie);
     if (error != NULL) {
         int ec = error ? error->error_code : -1;
-        g_error("Cannot select input with error: %s", generic_error_str(ec));
+        g_warning("Cannot select input with error: %s", generic_error_str(ec));
+        backlight_clear(backlight);
         return FALSE;
     }
     return TRUE;
@@ -154,7 +165,7 @@ backlight_loop_run(backlight_t* backlight, update_callback_t callback, void* use
             continue;
         } else {
             if (_randr_value(backlight, &value, &error) == FALSE) {
-                g_error("Randr get atom value: %s", generic_error_str(error->error_code));
+                g_warning("Randr get atom value: %s", generic_error_str(error->error_code));
                 continue;
             }
             callback(backlight, value, userdata);
@@ -233,49 +244,57 @@ _randr_atom(xcb_connection_t* connection,
 }
 
 static gboolean
-_randr_range(backlight_t* backlight,
-             xcb_atom_t atom_new,
-             xcb_atom_t atom_old,
-             xcb_generic_error_t** error)
+_randr_range_atom(backlight_t* backlight, xcb_atom_t atom, xcb_generic_error_t** error)
 {
     xcb_connection_t* connection = backlight->connection;
     xcb_randr_output_t output = backlight->output;
-
-    gboolean result = TRUE;
     xcb_randr_query_output_property_cookie_t prop_cookie;
     xcb_randr_query_output_property_reply_t* prop_reply;
 
-    if (atom_new != XCB_ATOM_NONE) {
-        prop_cookie = xcb_randr_query_output_property(connection, output, atom_new);
-        prop_reply = xcb_randr_query_output_property_reply(connection, prop_cookie, error);
-        if (*error != NULL || prop_reply == NULL) {
-            free(prop_reply);
-            if (atom_old != XCB_ATOM_NONE) {
-                prop_cookie = xcb_randr_query_output_property(connection, output, atom_old);
-                prop_reply = xcb_randr_query_output_property_reply(connection, prop_cookie, error);
-                if (*error != NULL || prop_reply == NULL) {
-                    result = FALSE;
-                } else {
-                    backlight->atom = atom_old;
-                }
-            }
-        } else {
-            backlight->atom = atom_new;
-        }
+    if (atom == XCB_ATOM_NONE) {
+        return FALSE;
+    }
+
+    prop_cookie = xcb_randr_query_output_property(connection, output, atom);
+    prop_reply = xcb_randr_query_output_property_reply(connection, prop_cookie, error);
+    if (*error != NULL || prop_reply == NULL) {
+        free(prop_reply);
+        return FALSE;
     }
 
     if (prop_reply == NULL ||
         !(prop_reply->range &&
           xcb_randr_query_output_property_valid_values_length(prop_reply) == 2)) {
-        result = FALSE;
+        free(prop_reply);
+        return FALSE;
     } else {
         int32_t* values = xcb_randr_query_output_property_valid_values(prop_reply);
         backlight->range.min = values[0];
         backlight->range.max = values[1];
+        free(prop_reply);
     }
 
-    free(prop_reply);
-    return result;
+    return TRUE;
+}
+
+static gboolean
+_randr_range(backlight_t* backlight,
+             xcb_atom_t atom_new,
+             xcb_atom_t atom_old,
+             xcb_generic_error_t** error)
+{
+    g_debug("Try new Atom");
+    if (_randr_range_atom(backlight, atom_new, error) == TRUE) {
+        backlight->atom = atom_new;
+        return TRUE;
+    }
+
+    g_debug("Try old Atom");
+    if (_randr_range_atom(backlight, atom_old, error) == TRUE) {
+        backlight->atom = atom_old;
+        return TRUE;
+    }
+    return FALSE;
 }
 
 const char* xcb_errors[] = {

@@ -5,7 +5,6 @@
 #include <locale.h>
 #include <math.h>
 
-#define G_LOG_DOMAIN ((gchar*)0)
 #define PROGRAM_NAME "xbacklight-notify"
 #define DEFAULT_DEBUG FALSE
 
@@ -46,7 +45,8 @@ context_init(Context* context)
 
 void
 context_free(Context* context)
-{}
+{
+}
 
 static gchar*
 notify_icon(gint brightness)
@@ -115,7 +115,7 @@ options_init(int argc, char* argv[])
     g_option_context_add_main_entries(option_context, option_entries, PROGRAM_NAME);
 
     if (g_option_context_parse(option_context, &argc, &argv, &error) == FALSE) {
-        g_error("Cannot parse command line arguments: %s", error->message);
+        g_warning("Cannot parse command line arguments: %s", error->message);
         g_error_free(error);
         return FALSE;
     }
